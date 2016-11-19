@@ -1,0 +1,28 @@
+{
+  "name": "gulp-cmd-pack",
+  "version": "1.0.0",
+  "description": "seajs打包工具",
+  "main": "index.js",
+  "scripts": {
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gaoyuan123/gulp-cmd-pack.git"
+  },
+  "dependencies": {
+    "gulp-util": "^3.0.3",
+    "uglify-js": "^1.3.5",
+    "through2": "^0.6.3"
+  },
+  "keywords": [
+    "seajs",
+    "pack",
+    "cmd"
+  ],
+  "author": "gaoyuan",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gaoyuan123/gulp-cmd-pack/issues"
+  },
+  "homepage": "https://github.com/gaoyuan123/gulp-cmd-pack#readme"
+}
