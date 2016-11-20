@@ -73,7 +73,6 @@ module.exports = function (option) {
 					
 					//创建异步依赖文件
 					var asyncFile = new File({
-						base: option.base,
 						path: path.join(option.base, dep + '.js'),
 						contents: new Buffer(asyncDepsContent.join('\n'))
 					});
