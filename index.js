@@ -1,29 +1,31 @@
-var through = require('through2');
-var path = require('path');
-var fs = require('fs');
-var gutil = require('gulp-util');
-var uglify = require('uglify-js');
-var File = gutil.File;
+'use strict';
+const through = require('through2');
+const path = require('path');
+const fs = require('fs');
+const gutil = require('gulp-util');
+const uglify = require('uglify-js');
+const File = gutil.File;
 
-var PLUGIN_NAME = 'gulp-cmd-pack';
+const PLUGIN_NAME = 'gulp-cmd-pack';
 
 
-var REQUIRE_RE = /"(?:\\"|[^"])*"|'(?:\\'|[^'])*'|\/\*[\S\s]*?\*\/|\/(?:\\\/|[^\/\r\n])+\/(?=[^\/])|\/\/.*|\.\s*require|(?:^|[^$])\brequire\s*\(\s*(["'])(.+?)\1\s*\)/g
-var ASYNC_REQUIRE_RE = /"(?:\\"|[ ^"])*"|'(?:\\'|[^'])*'|\/\*[\S\s]*?\*\/|\/(?:\\\/|[^\/\r\n])+\/(?=[^\/])|\/\/.*|\.\s*require|(?:^|[^$])\brequire\.async\s*\(\s*((["'])(.+?)\2)\s*(?:\)|,)|(?:^|[^$])\brequire\.async\s*\(\s*(\[(\s*(["'])(.+?)\6\s*,?\s*)+\])\s*(?:\)|,)/g
-var SLASH_RE = /\\\\/g
+const REQUIRE_RE = /"(?:\\"|[^"])*"|'(?:\\'|[^'])*'|\/\*[\S\s]*?\*\/|\/(?:\\\/|[^\/\r\n])+\/(?=[^\/])|\/\/.*|\.\s*require|(?:^|[^$])\brequire\s*\(\s*(["'])(.+?)\1\s*\)/g
+const ASYNC_REQUIRE_RE = /"(?:\\"|[ ^"])*"|'(?:\\'|[^'])*'|\/\*[\S\s]*?\*\/|\/(?:\\\/|[^\/\r\n])+\/(?=[^\/])|\/\/.*|\.\s*require|(?:^|[^$])\brequire\.async\s*\(\s*((["'])(.+?)\2)\s*(?:\)|,)|(?:^|[^$])\brequire\.async\s*\(\s*(\[(\s*(["'])(.+?)\6\s*,?\s*)+\])\s*(?:\)|,)/g
+const SLASH_RE = /\\\\/g
 
-var sepReg = /\\/g;
+const sepReg = /\\/g;
 
-var modcache = {};
+const modcache = {};
 
-var depsMap = {};
+const depsMap = {};
 
-var asyncDepsMap = {};
+const asyncDepsMap = {};
 
-var moduleContentMap = {};
+const moduleContentMap = {};
 
 module.exports = function (option) {
-
+	let manifest = {};
+	let asyncFiles = [];
     option = option || {};
     option.alias = option.alias || {};
     option.ignore = option.ignore || [];
@@ -35,7 +37,6 @@ module.exports = function (option) {
     }
 
     return through.obj(function (file, encoding, cb) {
-		var _self = this;
         if (file.isNull()) {
             return cb();
         }
@@ -46,38 +47,39 @@ module.exports = function (option) {
         }
 
         if (file.isBuffer()) {
-            var main = getId(file.path, option);
+            let main = getId(file.path, option);
+			manifest[main] = [];
             //处理同步依赖
-            var deps = getDependence(main);
+            let deps = getDependence(main);
             deps.unshift(main);
-            var depsContent = deps.map(function (dep) {
+            let depsContent = deps.map((dep)=>{
 				//处理异步依赖
-				var asyncDeps = getAsyncDependence(dep);
+				let asyncDeps = getAsyncDependence(dep);
 				//排除同步依赖中已引入的模块
-				asyncDeps = asyncDeps.filter(function (dep) {
-					return deps.indexOf(dep) === -1;
+				asyncDeps = asyncDeps.filter((dep)=> {
+					return deps.indexOf(dep) === -1 && manifest[main].push(dep + '.js') && asyncFiles.indexOf(dep) === -1;
 				})
 				
-				asyncDeps.forEach(function (dep) {
-					var childDeps = getDependence(dep);
+				asyncDeps.forEach((dep)=> {
+					let childDeps = getDependence(dep);
 					//排除同步依赖中已引入的模块
-					childDeps = childDeps.filter(function (childDep) {
-						return deps.indexOf(childDep) === -1 && asyncDeps.indexOf(dep) === -1;
+					childDeps = childDeps.filter((dep)=> {
+						return deps.indexOf(dep) === -1 && asyncDeps.indexOf(dep) === -1;
 					});
 					childDeps.unshift(dep);
 					
 					//读取异步依赖文件
-					var asyncDepsContent = childDeps.map(function (dep) {
+					let asyncDepsContent = childDeps.map((dep)=> {
 						return getParseModuleContent(dep, option.min);
 					});
 					
 					//创建异步依赖文件
-					var asyncFile = new File({
+					let asyncFile = new File({
 						path: path.join(option.base, dep + '.js'),
 						contents: new Buffer(asyncDepsContent.join('\n'))
 					});
-					
-					_self.push(asyncFile);
+					asyncFiles.push(dep);
+					this.push(asyncFile);
 					
 				});
 				
@@ -86,12 +88,22 @@ module.exports = function (option) {
             file.contents = new Buffer(depsContent.join('\n'));
             this.push(file);
            
-            var jsFilePath = file.base + path.sep + main;
+            let jsFilePath = file.base + path.sep + main;
             jsFilePath = path.normalize(jsFilePath);
             gutil.log(PLUGIN_NAME + ':', '✔ Module [' + jsFilePath + '] combo success.');
         }
         return cb();
-    });
+    },function(cb){
+		if(option.manifest){
+			let manifestFile = new File({
+				path: option.manifest,
+				contents: new Buffer(JSON.stringify(manifest,null,2))
+			});
+			gutil.log(PLUGIN_NAME + ':', '生成异步依赖配置文件' + manifestFile.path);
+			this.push(manifestFile);
+		}
+		cb();
+	});
 
     function getId(filePath, option) {
         return filePath.replace(option.base, '').replace(sepReg, '/').replace(/\.js$/, '');
@@ -101,8 +113,8 @@ module.exports = function (option) {
         if (depsMap[mod]) {
             return depsMap[mod];
         }
-        var ret = []
-        var code = getModuleContent(mod);
+        let ret = []
+        let code = getModuleContent(mod);
         code.replace(SLASH_RE, "")
             .replace(REQUIRE_RE, function (m, m1, m2) {
                 if (m2) {
@@ -118,13 +130,13 @@ module.exports = function (option) {
         if (asyncDepsMap[mod]) {
             return asyncDepsMap[mod];
         }
-        var ret = [];
-        var code = getModuleContent(mod);
+        let ret = [];
+        let code = getModuleContent(mod);
         code.replace(SLASH_RE)
             .replace(ASYNC_REQUIRE_RE, function () {
-                var args = Array.prototype.slice.call(arguments);
-                var singleModule = args[3];
-                var multiModules = args[4];
+                let args = Array.prototype.slice.call(arguments);
+                let singleModule = args[3];
+                let multiModules = args[4];
                 if (singleModule) {
                     ret.push(singleModule);
                 } else if (multiModules) {
@@ -146,9 +158,9 @@ module.exports = function (option) {
     }
 
     function unique(arr) {
-        var hash = {}, result = [];
-        var item;
-        for (var i = 0, l = arr.length; i < l; ++i) {
+        let hash = {}, result = [];
+        let item;
+        for (let i = 0, l = arr.length; i < l; ++i) {
             item = arr[i];
             if (item.indexOf('.js') != -1) {
                 //item.replace('.js', '');
@@ -165,7 +177,7 @@ module.exports = function (option) {
 
 
     function getModuleContent(mod) {
-        var ret = moduleContentMap[mod];
+        let ret = moduleContentMap[mod];
         if (ret) {
             return ret;
         }
@@ -188,8 +200,8 @@ module.exports = function (option) {
     }
 
     function getDependence(mod, extraModule) {
-        var deps = parseDependencies(mod);
-        var childDeps = [];
+        let deps = parseDependencies(mod);
+        let childDeps = [];
         if (extraModule && Array.isArray(extraModule)) {
             deps = deps.concat(extraModule);
         }
@@ -197,7 +209,7 @@ module.exports = function (option) {
         deps = unique(deps);
         deps.forEach(function (dep, i) {
             if (deps[i] && -1 != deps[i].indexOf("./")) {
-                var pa = path.join(mod + "/../", deps[i]);
+                let pa = path.join(mod + "/../", deps[i]);
                 deps[i] = pa.replace(/\\/g, "/");
             }
             childDeps = childDeps.concat(getDependence(deps[i]));
@@ -205,28 +217,28 @@ module.exports = function (option) {
 
         deps = deps.concat(childDeps);
 
-        return unique(deps);
+        return ignore(unique(deps));
     }
 
     function getAsyncDependence(mod, extraModule) {
-        var mods = [mod];
-        var deps = [];
-        var childDeps = [];
-        var childAsyncDeps = [];
+        let mods = [mod];
+        let deps = [];
+        let childDeps = [];
+        let childAsyncDeps = [];
 
         if (extraModule && Array.isArray(extraModule)) {
             mods = mods.concat(extraModule);
         }
         //解析异步依赖
         mods.forEach(function (dep) {
-            var asyncDeps = parseAsyncDependencies(dep);
+            let asyncDeps = parseAsyncDependencies(dep);
             deps = deps.concat(asyncDeps);
         });
-		return unique(deps);
+		return ignore(unique(deps));
     }
 	
     function getParseModuleContent(mod, minimized) {
-        var cacheName = mod;
+        let cacheName = mod;
         if (minimized) {
             cacheName += '-min';
         }
@@ -235,8 +247,8 @@ module.exports = function (option) {
             return modcache[cacheName];
         }
         //console.log(cacheName)
-        var source = getModuleContent(mod);
-        var deps = parseDependencies(mod);
+        let source = getModuleContent(mod);
+        let deps = parseDependencies(mod);
 
         if (deps.length) {
             deps = '"' + deps.join('","') + '"';
@@ -263,27 +275,36 @@ module.exports = function (option) {
     function min(source, minimized) {
         minimized = minimized === true ? {} : minimized;
         minimized.fromString = true;
-        var res = uglify.minify(source, minimized);
+        let res = uglify.minify(source, minimized);
         return res.code;
     }
 
+	function ignore(deps){
+		if(!option.ignore.length){
+			return deps;
+		}
+		return deps.filter(function(dep){
+			return option.ignore.indexOf(dep) === -1;
+		})
+	}
+	
     function wrapAsync(asyncName, content) {
-        var reg = /\b(\w)\.async\s*\(\s*/;
-        var start = content.search(reg);
+        let reg = /\b(\w)\.async\s*\(\s*/;
+        let start = content.search(reg);
         if (start === -1) {
             return content;
         }
-        var mixName = RegExp.$1;
+        let mixName = RegExp.$1;
         //console.log(mod + ':' + content.substring(start, start + 40))
-        var leftPos = rightPos = content.indexOf('(', start);
+        let leftPos = rightPos = content.indexOf('(', start);
         do {
             leftPos = content.indexOf('(', leftPos + 1);
             rightPos = content.indexOf(')', rightPos + 1);
         } while (leftPos !== -1 && leftPos < rightPos);
 
-        var leftStr = content.substring(0, start);
-        var middleStr = content.substring(start, rightPos + 1);
-        var rightStr = content.substring(rightPos + 1);
+        let leftStr = content.substring(0, start);
+        let middleStr = content.substring(start, rightPos + 1);
+        let rightStr = content.substring(rightPos + 1);
         return leftStr + mixName + '.async("' + asyncName + '",function(){' + middleStr + '})' + wrapAsync(asyncName, rightStr);
     }
 };
