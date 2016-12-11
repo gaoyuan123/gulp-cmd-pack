@@ -94,7 +94,7 @@ function mergeAsync(option) {
 		let depsMain = file.deps;
 		let depsAsync = file.depsAsync;
 		
-		if(depsAsync && depsAsync.length && option.merge(main)){
+		if(depsAsync && depsAsync.length && option.mergeFilter(file)){
 			let depsAll = cmdUtil.getDependence(depsAsync[0],depsAsync,option)
 			//排除同步依赖中已引入的模块
 			.filter((dep)=> {
@@ -165,14 +165,14 @@ function getOptions(option){
 			})
 		}
 	}
-	let merge = option.merge;
-	if(merge instanceof Array){
-		option.merge = function(main){
-			return merge.indexOf(main) !== -1;
+	let mergeFilter = option.mergeFilter;
+	if(mergeFilter instanceof Array){
+		option.mergeFilter = function(main){
+			return mergeFilter.indexOf(main) !== -1;
 		}
-	}else if(typeof merge !== 'function'){
-		option.merge = function(){
-			return !!merge;
+	}else if(typeof mergeFilter !== 'function'){
+		option.mergeFilter = function(){
+			return true;
 		}
 	}
 	
